@@ -20,6 +20,12 @@ const games: GameCard[] = [
     route: '/connect-four',
     icon: '🔴',
   },
+  {
+    title: 'Hangman',
+    description: 'Guess the hidden word letter by letter before the man is hanged. 6 mistakes allowed.',
+    route: '/hangman',
+    icon: '🪢',
+  },
 ]
 
 export default function Dashboard() {

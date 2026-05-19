@@ -67,6 +67,31 @@ export const connectFourApi = {
     }),
 };
 
+export interface HangmanGame {
+  id: string;
+  maskedWord: string[];
+  guessedLetters: string[];
+  wrongGuesses: string[];
+  wrongCount: number;
+  maxWrong: number;
+  status: 'playing' | 'won' | 'lost';
+  word?: string;
+}
+
+export const hangmanApi = {
+  createGame: () => request<HangmanGame>('/hangman/games', { method: 'POST' }),
+  makeGuess: (id: string, letter: string) =>
+    request<HangmanGame>(`/hangman/games/${id}/guess`, {
+      method: 'POST',
+      body: JSON.stringify({ letter }),
+    }),
+  saveResult: (id: string, userId: number, result: 'win' | 'loss' | 'draw', boardState: (string | null)[]) =>
+    request<void>(`/hangman/games/${id}/save`, {
+      method: 'POST',
+      body: JSON.stringify({ userId, result, boardState }),
+    }),
+};
+
 export const scoresApi = {
   getByGame: (gameId: number) => request<unknown[]>(`/scores/game/${gameId}`),
   getByUser: (userId: number) => request<unknown[]>(`/scores/user/${userId}`),
