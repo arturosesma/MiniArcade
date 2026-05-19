@@ -6,6 +6,7 @@ import { GamesModule } from './games/games.module';
 import { ScoresModule } from './scores/scores.module';
 import { GameHistoryModule } from './game-history/game-history.module';
 import { TicTacToeModule } from './tic-tac-toe/tic-tac-toe.module';
+import { ConnectFourModule } from './connect-four/connect-four.module';
 
 @Module({
   imports: [
@@ -29,6 +30,7 @@ import { TicTacToeModule } from './tic-tac-toe/tic-tac-toe.module';
     ScoresModule,
     GameHistoryModule,
     TicTacToeModule,
+    ConnectFourModule,
   ],
 })
 export class AppModule {}

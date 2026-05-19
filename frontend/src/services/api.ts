@@ -44,6 +44,29 @@ export const usersApi = {
     request<User>('/users', { method: 'POST', body: JSON.stringify({ username, email }) }),
 };
 
+export interface ConnectFourSession {
+  id: string;
+  board: (string | null)[];
+  currentPlayer: 'R' | 'Y';
+  winner: string | null;
+  winningCells: number[];
+  isDraw: boolean;
+}
+
+export const connectFourApi = {
+  createGame: () => request<ConnectFourSession>('/connect-four/games', { method: 'POST' }),
+  dropPiece: (id: string, column: number, player: 'R' | 'Y') =>
+    request<ConnectFourSession>(`/connect-four/games/${id}/drop`, {
+      method: 'POST',
+      body: JSON.stringify({ column, player }),
+    }),
+  saveResult: (id: string, userId: number, result: 'win' | 'loss' | 'draw', boardState: (string | null)[]) =>
+    request<void>(`/connect-four/games/${id}/save`, {
+      method: 'POST',
+      body: JSON.stringify({ userId, result, boardState }),
+    }),
+};
+
 export const scoresApi = {
   getByGame: (gameId: number) => request<unknown[]>(`/scores/game/${gameId}`),
   getByUser: (userId: number) => request<unknown[]>(`/scores/user/${userId}`),
