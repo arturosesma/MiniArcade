@@ -1,6 +1,6 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ticTacToeApi, usersApi, type TicTacToeSession, type User } from '../services/api'
+import { ticTacToeApi, usersApi, gameHistoryApi, type TicTacToeSession, type User, type GameHistoryEntry } from '../services/api'
 
 type Cell = string | null
 
@@ -17,6 +17,79 @@ function getWinningCells(board: Cell[]): number[] {
   return []
 }
 
+function resultColor(r: string) {
+  return r === 'win' ? 'text-green-400' : r === 'loss' ? 'text-red-400' : 'text-yellow-400'
+}
+
+function fmtDate(d: string) {
+  return new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: '2-digit' })
+}
+
+// ── History modal ─────────────────────────────────────────────────────────────
+
+type Players = { p1: User; p2: User }
+
+function HistoryModal({ players, onClose }: { players: Players; onClose: () => void }) {
+  const [h1, setH1] = useState<GameHistoryEntry[] | null>(null)
+  const [h2, setH2] = useState<GameHistoryEntry[] | null>(null)
+
+  useEffect(() => {
+    Promise.all([
+      gameHistoryApi.getByUser(players.p1.id),
+      gameHistoryApi.getByUser(players.p2.id),
+    ]).then(([a, b]) => {
+      setH1(a.filter(e => e.game?.name === 'Tic Tac Toe'))
+      setH2(b.filter(e => e.game?.name === 'Tic Tac Toe'))
+    }).catch(() => { setH1([]); setH2([]) })
+  }, [players.p1.id, players.p2.id])
+
+  const loading = h1 === null || h2 === null
+  const len = loading ? 0 : Math.max(h1.length, h2.length)
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-gray-900 rounded-2xl p-6 w-full max-w-md max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-white font-bold text-lg">Match History</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-white text-2xl leading-none">&times;</button>
+        </div>
+        {loading ? (
+          <p className="text-gray-400 text-center py-6">Loading…</p>
+        ) : len === 0 ? (
+          <p className="text-gray-400 text-center py-6">No matches played yet.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-gray-500 text-xs uppercase">
+                <th className="text-left pb-3">Date</th>
+                <th className="text-center pb-3">{players.p1.username} (X)</th>
+                <th className="text-center pb-3">{players.p2.username} (O)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Array.from({ length: len }, (_, i) => {
+                const e1 = h1[i]
+                const e2 = h2[i]
+                return (
+                  <tr key={i} className="border-t border-gray-800">
+                    <td className="py-2 text-gray-500">{fmtDate((e1 ?? e2).createdAt)}</td>
+                    <td className={`py-2 text-center font-semibold ${e1 ? resultColor(e1.result) : 'text-gray-600'}`}>
+                      {e1 ? e1.result.charAt(0).toUpperCase() + e1.result.slice(1) : '—'}
+                    </td>
+                    <td className={`py-2 text-center font-semibold ${e2 ? resultColor(e2.result) : 'text-gray-600'}`}>
+                      {e2 ? e2.result.charAt(0).toUpperCase() + e2.result.slice(1) : '—'}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Setup screen ──────────────────────────────────────────────────────────────
 
 interface SetupProps {
@@ -24,6 +97,7 @@ interface SetupProps {
 }
 
 function Setup({ onStart }: SetupProps) {
+  const navigate = useNavigate()
   const [name1, setName1] = useState('')
   const [name2, setName2] = useState('')
   const [loading, setLoading] = useState(false)
@@ -48,6 +122,11 @@ function Setup({ onStart }: SetupProps) {
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center">
       <div className="bg-gray-900 rounded-2xl p-8 w-full max-w-sm shadow-xl">
+        <div className="flex items-center mb-4">
+          <button onClick={() => navigate('/')} className="text-gray-400 hover:text-white text-sm transition-colors">
+            &larr; Dashboard
+          </button>
+        </div>
         <h2 className="text-2xl font-bold text-white mb-2 text-center">Tic Tac Toe</h2>
         <p className="text-gray-400 text-sm mb-6 text-center">Enter both player names to start.</p>
         <label className="text-gray-400 text-xs mb-1 block">Player 1 (X)</label>
@@ -117,21 +196,22 @@ function Board({ board, winningCells, onCellClick, disabled }: BoardProps) {
 
 // ── Main game ─────────────────────────────────────────────────────────────────
 
-type Players = { p1: User; p2: User }
-
 export default function TicTacToe() {
   const navigate = useNavigate()
   const [players, setPlayers] = useState<Players | undefined>(undefined)
   const [session, setSession] = useState<TicTacToeSession | null>(null)
+  const [score, setScore] = useState({ p1: 0, p2: 0 })
   const [loading, setLoading] = useState(false)
   const [resultSaved, setResultSaved] = useState(false)
   const [apiError, setApiError] = useState('')
+  const [showHistory, setShowHistory] = useState(false)
 
   const winningCells = session ? getWinningCells(session.board) : []
   const isOver = !!(session?.winner || session?.isDraw)
 
   const startGame = useCallback(async (p1: User, p2: User) => {
     setPlayers({ p1, p2 })
+    setScore({ p1: 0, p2: 0 })
     setLoading(true)
     setApiError('')
     try {
@@ -156,11 +236,13 @@ export default function TicTacToe() {
       if ((updated.winner || updated.isDraw) && !resultSaved) {
         const { p1, p2 } = players
         if (updated.winner === 'X') {
+          setScore(s => ({ ...s, p1: s.p1 + 1 }))
           await Promise.all([
             ticTacToeApi.saveResult(session.id, p1.id, 'win', updated.board),
             ticTacToeApi.saveResult(session.id, p2.id, 'loss', updated.board),
           ])
         } else if (updated.winner === 'O') {
+          setScore(s => ({ ...s, p2: s.p2 + 1 }))
           await Promise.all([
             ticTacToeApi.saveResult(session.id, p1.id, 'loss', updated.board),
             ticTacToeApi.saveResult(session.id, p2.id, 'win', updated.board),
@@ -225,16 +307,26 @@ export default function TicTacToe() {
     : `${playerName(session.currentPlayer)}'s turn`
 
   return (
-    <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center gap-8 p-6">
+    <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center gap-6 p-6">
       {/* Header */}
       <div className="flex items-center justify-between w-full max-w-sm">
         <button onClick={() => navigate('/')} className="text-gray-400 hover:text-white transition-colors text-sm">
           &larr; Back
         </button>
         <h1 className="text-2xl font-bold text-white">Tic Tac Toe</h1>
-        <div className="text-right text-xs">
-          <p className="text-indigo-400">{players.p1.username} <span className="text-gray-500">(X)</span></p>
-          <p className="text-indigo-300">{players.p2.username} <span className="text-gray-500">(O)</span></p>
+        <div className="w-16" />
+      </div>
+
+      {/* Session score */}
+      <div className="flex items-center gap-5 bg-gray-800 px-8 py-3 rounded-xl">
+        <div className="text-right">
+          <p className="text-indigo-400 font-semibold text-sm">{players.p1.username}</p>
+          <p className="text-gray-500 text-xs">X</p>
+        </div>
+        <span className="text-3xl font-black text-white">{score.p1} — {score.p2}</span>
+        <div className="text-left">
+          <p className="text-indigo-300 font-semibold text-sm">{players.p2.username}</p>
+          <p className="text-gray-500 text-xs">O</p>
         </div>
       </div>
 
@@ -256,11 +348,10 @@ export default function TicTacToe() {
         disabled={loading || isOver}
       />
 
-      {/* Error */}
       {apiError && <p className="text-red-400 text-sm">{apiError}</p>}
 
       {/* Actions */}
-      <div className="flex gap-4">
+      <div className="flex gap-3">
         {isOver && (
           <button
             onClick={resetGame}
@@ -272,15 +363,22 @@ export default function TicTacToe() {
         )}
         <button
           onClick={() => navigate('/')}
-          className="bg-gray-800 hover:bg-gray-700 text-gray-300 font-semibold px-8 py-2 rounded-lg transition-colors"
+          className="bg-gray-800 hover:bg-gray-700 text-gray-300 font-semibold px-6 py-2 rounded-lg transition-colors"
         >
           Dashboard
         </button>
       </div>
 
-      {resultSaved && (
-        <p className="text-green-400 text-sm">Results saved!</p>
-      )}
+      <button
+        onClick={() => setShowHistory(true)}
+        className="text-gray-500 hover:text-gray-300 text-sm transition-colors"
+      >
+        View match history
+      </button>
+
+      {resultSaved && <p className="text-green-400 text-sm">Results saved!</p>}
+
+      {showHistory && <HistoryModal players={players} onClose={() => setShowHistory(false)} />}
     </div>
   )
 }

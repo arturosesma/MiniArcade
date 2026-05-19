@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { hangmanApi, usersApi, type HangmanGame, type User } from '../services/api'
+import { hangmanApi, usersApi, gameHistoryApi, type HangmanGame, type User, type GameHistoryEntry } from '../services/api'
 
 const ALPHABET = 'abcdefghijklmnopqrstuvwxyz'.split('')
 
@@ -47,7 +47,7 @@ function WordDisplay({ maskedWord, revealed }: { maskedWord: string[]; revealed?
               revealed && maskedWord[i] === '_' ? 'text-red-400' : 'text-white',
             ].join(' ')}
           >
-            {char === '_' ? ' ' : char}
+            {char === '_' ? ' ' : char}
           </span>
           <div className="h-0.5 w-full bg-gray-500 mt-1" />
         </div>
@@ -96,6 +96,59 @@ function Keyboard({ guessedLetters, wrongGuesses, onGuess, disabled }: KeyboardP
   )
 }
 
+// ── History modal ─────────────────────────────────────────────────────────────
+
+function HistoryModal({ user, onClose }: { user: User; onClose: () => void }) {
+  const [history, setHistory] = useState<GameHistoryEntry[] | null>(null)
+
+  useEffect(() => {
+    gameHistoryApi.getByUser(user.id)
+      .then(entries => setHistory(entries.filter(e => e.game?.name === 'Hangman')))
+      .catch(() => setHistory([]))
+  }, [user.id])
+
+  const fmtDate = (d: string) =>
+    new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: '2-digit' })
+
+  const resultColor = (r: string) =>
+    r === 'win' ? 'text-green-400' : r === 'loss' ? 'text-red-400' : 'text-yellow-400'
+
+  return (
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-gray-900 rounded-2xl p-6 w-full max-w-sm max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-white font-bold text-lg">History — {user.username}</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-white text-2xl leading-none">&times;</button>
+        </div>
+        {history === null ? (
+          <p className="text-gray-400 text-center py-6">Loading…</p>
+        ) : history.length === 0 ? (
+          <p className="text-gray-400 text-center py-6">No matches played yet.</p>
+        ) : (
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-gray-500 text-xs uppercase">
+                <th className="text-left pb-3">Date</th>
+                <th className="text-center pb-3">Result</th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.map(entry => (
+                <tr key={entry.id} className="border-t border-gray-800">
+                  <td className="py-2 text-gray-500">{fmtDate(entry.createdAt)}</td>
+                  <td className={`py-2 text-center font-semibold ${resultColor(entry.result)}`}>
+                    {entry.result.charAt(0).toUpperCase() + entry.result.slice(1)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Setup screen ──────────────────────────────────────────────────────────────
 
 interface SetupProps {
@@ -103,6 +156,7 @@ interface SetupProps {
 }
 
 function Setup({ onStart }: SetupProps) {
+  const navigate = useNavigate()
   const [username, setUsername] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -124,6 +178,11 @@ function Setup({ onStart }: SetupProps) {
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center">
       <div className="bg-gray-900 rounded-2xl p-8 w-full max-w-sm shadow-xl">
+        <div className="flex items-center mb-4">
+          <button onClick={() => navigate('/')} className="text-gray-400 hover:text-white text-sm transition-colors">
+            &larr; Dashboard
+          </button>
+        </div>
         <h2 className="text-2xl font-bold text-white mb-2 text-center">Hangman</h2>
         <p className="text-gray-400 text-sm mb-6 text-center">Guess the word before the man is hanged.</p>
         <input
@@ -155,6 +214,7 @@ export default function Hangman() {
   const [loading, setLoading] = useState(false)
   const [resultSaved, setResultSaved] = useState(false)
   const [apiError, setApiError] = useState('')
+  const [showHistory, setShowHistory] = useState(false)
 
   const isOver = game?.status !== 'playing'
 
@@ -245,7 +305,7 @@ export default function Hangman() {
           &larr; Back
         </button>
         <h1 className="text-2xl font-bold text-white">Hangman</h1>
-        <span className="text-emerald-400 text-sm">{user?.username}</span>
+        <span className="text-emerald-400 text-sm">{user.username}</span>
       </div>
 
       {/* Drawing + attempts */}
@@ -284,7 +344,7 @@ export default function Hangman() {
       {apiError && <p className="text-red-400 text-sm">{apiError}</p>}
 
       {/* Actions */}
-      <div className="flex gap-4">
+      <div className="flex gap-3">
         {isOver && (
           <button
             onClick={resetGame}
@@ -296,13 +356,22 @@ export default function Hangman() {
         )}
         <button
           onClick={() => navigate('/')}
-          className="bg-gray-800 hover:bg-gray-700 text-gray-300 font-semibold px-8 py-2 rounded-lg transition-colors"
+          className="bg-gray-800 hover:bg-gray-700 text-gray-300 font-semibold px-6 py-2 rounded-lg transition-colors"
         >
           Dashboard
         </button>
       </div>
 
+      <button
+        onClick={() => setShowHistory(true)}
+        className="text-gray-500 hover:text-gray-300 text-sm transition-colors"
+      >
+        View match history
+      </button>
+
       {resultSaved && <p className="text-green-400 text-sm">Score saved!</p>}
+
+      {showHistory && <HistoryModal user={user} onClose={() => setShowHistory(false)} />}
     </div>
   )
 }

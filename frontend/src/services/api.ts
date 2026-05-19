@@ -105,3 +105,17 @@ export const scoresApi = {
   getByGame: (gameId: number) => request<unknown[]>(`/scores/game/${gameId}`),
   getByUser: (userId: number) => request<unknown[]>(`/scores/user/${userId}`),
 };
+
+export interface GameHistoryEntry {
+  id: number;
+  userId: number;
+  gameId: number;
+  result: 'win' | 'loss' | 'draw';
+  boardState: (string | null)[];
+  createdAt: string;
+  game: { id: number; name: string; description: string };
+}
+
+export const gameHistoryApi = {
+  getByUser: (userId: number) => request<GameHistoryEntry[]>(`/game-history/user/${userId}`),
+};
