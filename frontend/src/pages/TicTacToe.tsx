@@ -20,24 +20,27 @@ function getWinningCells(board: Cell[]): number[] {
 // ── Setup screen ──────────────────────────────────────────────────────────────
 
 interface SetupProps {
-  onStart: (user: User | null) => void
+  onStart: (player1: User, player2: User) => void
 }
 
 function Setup({ onStart }: SetupProps) {
-  const [username, setUsername] = useState('')
-  const [email, setEmail] = useState('')
+  const [name1, setName1] = useState('')
+  const [name2, setName2] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
   async function handleStart() {
-    if (!username.trim()) { onStart(null); return }
+    const n1 = name1.trim()
+    const n2 = name2.trim()
+    if (!n1 || !n2) { setError('Both player names are required.'); return }
+    if (n1 === n2) { setError('Player names must be different.'); return }
     setLoading(true)
     setError('')
     try {
-      const user = await usersApi.create(username.trim(), email.trim() || `${username.trim()}@guest.local`)
-      onStart(user)
+      const [p1, p2] = await Promise.all([usersApi.getOrCreate(n1), usersApi.getOrCreate(n2)])
+      onStart(p1, p2)
     } catch {
-      setError('Username already taken or invalid email.')
+      setError('Could not set up players. Please try again.')
       setLoading(false)
     }
   }
@@ -45,19 +48,22 @@ function Setup({ onStart }: SetupProps) {
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center">
       <div className="bg-gray-900 rounded-2xl p-8 w-full max-w-sm shadow-xl">
-        <h2 className="text-2xl font-bold text-white mb-6 text-center">Tic Tac Toe</h2>
-        <p className="text-gray-400 text-sm mb-4 text-center">Enter your name to track your score, or play as guest.</p>
-        <input
-          className="w-full bg-gray-800 text-white rounded-lg px-4 py-2 mb-3 outline-none focus:ring-2 focus:ring-indigo-500"
-          placeholder="Username (optional)"
-          value={username}
-          onChange={e => setUsername(e.target.value)}
-        />
+        <h2 className="text-2xl font-bold text-white mb-2 text-center">Tic Tac Toe</h2>
+        <p className="text-gray-400 text-sm mb-6 text-center">Enter both player names to start.</p>
+        <label className="text-gray-400 text-xs mb-1 block">Player 1 (X)</label>
         <input
           className="w-full bg-gray-800 text-white rounded-lg px-4 py-2 mb-4 outline-none focus:ring-2 focus:ring-indigo-500"
-          placeholder="Email (optional)"
-          value={email}
-          onChange={e => setEmail(e.target.value)}
+          placeholder="Player 1 name"
+          value={name1}
+          onChange={e => setName1(e.target.value)}
+        />
+        <label className="text-gray-400 text-xs mb-1 block">Player 2 (O)</label>
+        <input
+          className="w-full bg-gray-800 text-white rounded-lg px-4 py-2 mb-4 outline-none focus:ring-2 focus:ring-indigo-500"
+          placeholder="Player 2 name"
+          value={name2}
+          onChange={e => setName2(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleStart()}
         />
         {error && <p className="text-red-400 text-sm mb-3">{error}</p>}
         <button
@@ -65,13 +71,7 @@ function Setup({ onStart }: SetupProps) {
           disabled={loading}
           className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-semibold py-2 rounded-lg transition-colors"
         >
-          {loading ? 'Starting…' : 'Play'}
-        </button>
-        <button
-          onClick={() => onStart(null)}
-          className="w-full mt-2 text-gray-500 hover:text-gray-300 text-sm py-1 transition-colors"
-        >
-          Play as guest
+          {loading ? 'Setting up…' : 'Start Game'}
         </button>
       </div>
     </div>
@@ -117,9 +117,11 @@ function Board({ board, winningCells, onCellClick, disabled }: BoardProps) {
 
 // ── Main game ─────────────────────────────────────────────────────────────────
 
+type Players = { p1: User; p2: User }
+
 export default function TicTacToe() {
   const navigate = useNavigate()
-  const [user, setUser] = useState<User | null | undefined>(undefined) // undefined = not chosen yet
+  const [players, setPlayers] = useState<Players | undefined>(undefined)
   const [session, setSession] = useState<TicTacToeSession | null>(null)
   const [loading, setLoading] = useState(false)
   const [resultSaved, setResultSaved] = useState(false)
@@ -128,8 +130,8 @@ export default function TicTacToe() {
   const winningCells = session ? getWinningCells(session.board) : []
   const isOver = !!(session?.winner || session?.isDraw)
 
-  const startGame = useCallback(async (selectedUser: User | null) => {
-    setUser(selectedUser)
+  const startGame = useCallback(async (p1: User, p2: User) => {
+    setPlayers({ p1, p2 })
     setLoading(true)
     setApiError('')
     try {
@@ -144,17 +146,31 @@ export default function TicTacToe() {
   }, [])
 
   const handleCellClick = useCallback(async (index: number) => {
-    if (!session || isOver || loading) return
+    if (!session || isOver || loading || !players) return
     setLoading(true)
     setApiError('')
     try {
       const updated = await ticTacToeApi.makeMove(session.id, index, session.currentPlayer)
       setSession(updated)
 
-      // Auto-save when game ends
-      if ((updated.winner || updated.isDraw) && user && !resultSaved) {
-        const result = updated.winner ? 'win' : 'draw'
-        await ticTacToeApi.saveResult(session.id, user.id, result, updated.board)
+      if ((updated.winner || updated.isDraw) && !resultSaved) {
+        const { p1, p2 } = players
+        if (updated.winner === 'X') {
+          await Promise.all([
+            ticTacToeApi.saveResult(session.id, p1.id, 'win', updated.board),
+            ticTacToeApi.saveResult(session.id, p2.id, 'loss', updated.board),
+          ])
+        } else if (updated.winner === 'O') {
+          await Promise.all([
+            ticTacToeApi.saveResult(session.id, p1.id, 'loss', updated.board),
+            ticTacToeApi.saveResult(session.id, p2.id, 'win', updated.board),
+          ])
+        } else {
+          await Promise.all([
+            ticTacToeApi.saveResult(session.id, p1.id, 'draw', updated.board),
+            ticTacToeApi.saveResult(session.id, p2.id, 'draw', updated.board),
+          ])
+        }
         setResultSaved(true)
       }
     } catch (e: unknown) {
@@ -162,7 +178,7 @@ export default function TicTacToe() {
     } finally {
       setLoading(false)
     }
-  }, [session, isOver, loading, user, resultSaved])
+  }, [session, isOver, loading, players, resultSaved])
 
   const resetGame = useCallback(async () => {
     if (!session) return
@@ -179,19 +195,17 @@ export default function TicTacToe() {
     }
   }, [session])
 
-  // Not chosen a user yet
-  if (user === undefined) {
+  if (players === undefined) {
     return <Setup onStart={startGame} />
   }
 
-  // Waiting for first session
   if (!session) {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center text-white">
         {apiError ? (
           <div className="text-center">
             <p className="text-red-400 mb-4">{apiError}</p>
-            <button onClick={() => startGame(user)} className="bg-indigo-600 hover:bg-indigo-500 px-6 py-2 rounded-lg">
+            <button onClick={() => startGame(players.p1, players.p2)} className="bg-indigo-600 hover:bg-indigo-500 px-6 py-2 rounded-lg">
               Retry
             </button>
           </div>
@@ -202,11 +216,13 @@ export default function TicTacToe() {
     )
   }
 
+  const playerName = (marker: string) => marker === 'X' ? players.p1.username : players.p2.username
+
   const statusText = session.winner
-    ? `Player ${session.winner} wins!`
+    ? `${playerName(session.winner)} wins!`
     : session.isDraw
     ? "It's a draw!"
-    : `Player ${session.currentPlayer}'s turn`
+    : `${playerName(session.currentPlayer)}'s turn`
 
   return (
     <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center gap-8 p-6">
@@ -216,11 +232,10 @@ export default function TicTacToe() {
           &larr; Back
         </button>
         <h1 className="text-2xl font-bold text-white">Tic Tac Toe</h1>
-        {user ? (
-          <span className="text-indigo-400 text-sm">{user.username}</span>
-        ) : (
-          <span className="text-gray-500 text-sm">Guest</span>
-        )}
+        <div className="text-right text-xs">
+          <p className="text-indigo-400">{players.p1.username} <span className="text-gray-500">(X)</span></p>
+          <p className="text-indigo-300">{players.p2.username} <span className="text-gray-500">(O)</span></p>
+        </div>
       </div>
 
       {/* Status */}
@@ -264,7 +279,7 @@ export default function TicTacToe() {
       </div>
 
       {resultSaved && (
-        <p className="text-green-400 text-sm">Score saved!</p>
+        <p className="text-green-400 text-sm">Results saved!</p>
       )}
     </div>
   )

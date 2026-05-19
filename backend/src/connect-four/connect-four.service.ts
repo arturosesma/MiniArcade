@@ -116,10 +116,7 @@ export class ConnectFourService {
     return null;
   }
 
-  async saveResult(sessionId: string, dto: SaveResultDto): Promise<void> {
-    const session = this.sessions.get(sessionId);
-    if (!session) throw new NotFoundException('Game session not found');
-
+  async saveResult(_sessionId: string, dto: SaveResultDto): Promise<void> {
     let game = await this.gamesService.findByName('Connect Four');
     if (!game) {
       game = await this.gamesService.create({
@@ -142,8 +139,6 @@ export class ConnectFourService {
         score: 1,
       });
     }
-
-    this.sessions.delete(sessionId);
   }
 
   getSession(sessionId: string): ConnectFourSession {

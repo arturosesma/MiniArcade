@@ -42,6 +42,15 @@ export const usersApi = {
   getAll: () => request<User[]>('/users'),
   create: (username: string, email: string) =>
     request<User>('/users', { method: 'POST', body: JSON.stringify({ username, email }) }),
+  findByUsername: (username: string) =>
+    request<User>(`/users/username/${encodeURIComponent(username)}`),
+  getOrCreate: async (username: string): Promise<User> => {
+    try {
+      return await usersApi.findByUsername(username);
+    } catch {
+      return await usersApi.create(username, `${username}@games.local`);
+    }
+  },
 };
 
 export interface ConnectFourSession {

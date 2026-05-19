@@ -8,24 +8,27 @@ const COLS = 7
 // ── Setup screen ──────────────────────────────────────────────────────────────
 
 interface SetupProps {
-  onStart: (user: User | null) => void
+  onStart: (player1: User, player2: User) => void
 }
 
 function Setup({ onStart }: SetupProps) {
-  const [username, setUsername] = useState('')
-  const [email, setEmail] = useState('')
+  const [name1, setName1] = useState('')
+  const [name2, setName2] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
   async function handleStart() {
-    if (!username.trim()) { onStart(null); return }
+    const n1 = name1.trim()
+    const n2 = name2.trim()
+    if (!n1 || !n2) { setError('Both player names are required.'); return }
+    if (n1 === n2) { setError('Player names must be different.'); return }
     setLoading(true)
     setError('')
     try {
-      const user = await usersApi.create(username.trim(), email.trim() || `${username.trim()}@guest.local`)
-      onStart(user)
+      const [p1, p2] = await Promise.all([usersApi.getOrCreate(n1), usersApi.getOrCreate(n2)])
+      onStart(p1, p2)
     } catch {
-      setError('Username already taken or invalid email.')
+      setError('Could not set up players. Please try again.')
       setLoading(false)
     }
   }
@@ -33,19 +36,22 @@ function Setup({ onStart }: SetupProps) {
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center">
       <div className="bg-gray-900 rounded-2xl p-8 w-full max-w-sm shadow-xl">
-        <h2 className="text-2xl font-bold text-white mb-6 text-center">Connect Four</h2>
-        <p className="text-gray-400 text-sm mb-4 text-center">Enter your name to track your score, or play as guest.</p>
+        <h2 className="text-2xl font-bold text-white mb-2 text-center">Connect Four</h2>
+        <p className="text-gray-400 text-sm mb-6 text-center">Enter both player names to start.</p>
+        <label className="text-gray-400 text-xs mb-1 block">Player 1 (Red)</label>
         <input
-          className="w-full bg-gray-800 text-white rounded-lg px-4 py-2 mb-3 outline-none focus:ring-2 focus:ring-blue-500"
-          placeholder="Username (optional)"
-          value={username}
-          onChange={e => setUsername(e.target.value)}
+          className="w-full bg-gray-800 text-white rounded-lg px-4 py-2 mb-4 outline-none focus:ring-2 focus:ring-red-500"
+          placeholder="Player 1 name"
+          value={name1}
+          onChange={e => setName1(e.target.value)}
         />
+        <label className="text-gray-400 text-xs mb-1 block">Player 2 (Yellow)</label>
         <input
-          className="w-full bg-gray-800 text-white rounded-lg px-4 py-2 mb-4 outline-none focus:ring-2 focus:ring-blue-500"
-          placeholder="Email (optional)"
-          value={email}
-          onChange={e => setEmail(e.target.value)}
+          className="w-full bg-gray-800 text-white rounded-lg px-4 py-2 mb-4 outline-none focus:ring-2 focus:ring-yellow-500"
+          placeholder="Player 2 name"
+          value={name2}
+          onChange={e => setName2(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleStart()}
         />
         {error && <p className="text-red-400 text-sm mb-3">{error}</p>}
         <button
@@ -53,13 +59,7 @@ function Setup({ onStart }: SetupProps) {
           disabled={loading}
           className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-semibold py-2 rounded-lg transition-colors"
         >
-          {loading ? 'Starting…' : 'Play'}
-        </button>
-        <button
-          onClick={() => onStart(null)}
-          className="w-full mt-2 text-gray-500 hover:text-gray-300 text-sm py-1 transition-colors"
-        >
-          Play as guest
+          {loading ? 'Setting up…' : 'Start Game'}
         </button>
       </div>
     </div>
@@ -135,9 +135,11 @@ function Board({ board, winningCells, onColClick, disabled, currentPlayer }: Boa
 
 // ── Main game ─────────────────────────────────────────────────────────────────
 
+type Players = { p1: User; p2: User }
+
 export default function ConnectFour() {
   const navigate = useNavigate()
-  const [user, setUser] = useState<User | null | undefined>(undefined)
+  const [players, setPlayers] = useState<Players | undefined>(undefined)
   const [session, setSession] = useState<ConnectFourSession | null>(null)
   const [loading, setLoading] = useState(false)
   const [resultSaved, setResultSaved] = useState(false)
@@ -145,8 +147,8 @@ export default function ConnectFour() {
 
   const isOver = !!(session?.winner || session?.isDraw)
 
-  const startGame = useCallback(async (selectedUser: User | null) => {
-    setUser(selectedUser)
+  const startGame = useCallback(async (p1: User, p2: User) => {
+    setPlayers({ p1, p2 })
     setLoading(true)
     setApiError('')
     try {
@@ -161,16 +163,31 @@ export default function ConnectFour() {
   }, [])
 
   const handleColClick = useCallback(async (col: number) => {
-    if (!session || isOver || loading) return
+    if (!session || isOver || loading || !players) return
     setLoading(true)
     setApiError('')
     try {
       const updated = await connectFourApi.dropPiece(session.id, col, session.currentPlayer)
       setSession(updated)
 
-      if ((updated.winner || updated.isDraw) && user && !resultSaved) {
-        const result = updated.winner ? 'win' : 'draw'
-        await connectFourApi.saveResult(session.id, user.id, result, updated.board)
+      if ((updated.winner || updated.isDraw) && !resultSaved) {
+        const { p1, p2 } = players
+        if (updated.winner === 'R') {
+          await Promise.all([
+            connectFourApi.saveResult(session.id, p1.id, 'win', updated.board),
+            connectFourApi.saveResult(session.id, p2.id, 'loss', updated.board),
+          ])
+        } else if (updated.winner === 'Y') {
+          await Promise.all([
+            connectFourApi.saveResult(session.id, p1.id, 'loss', updated.board),
+            connectFourApi.saveResult(session.id, p2.id, 'win', updated.board),
+          ])
+        } else {
+          await Promise.all([
+            connectFourApi.saveResult(session.id, p1.id, 'draw', updated.board),
+            connectFourApi.saveResult(session.id, p2.id, 'draw', updated.board),
+          ])
+        }
         setResultSaved(true)
       }
     } catch (e: unknown) {
@@ -178,7 +195,7 @@ export default function ConnectFour() {
     } finally {
       setLoading(false)
     }
-  }, [session, isOver, loading, user, resultSaved])
+  }, [session, isOver, loading, players, resultSaved])
 
   const resetGame = useCallback(async () => {
     setLoading(true)
@@ -194,7 +211,7 @@ export default function ConnectFour() {
     }
   }, [])
 
-  if (user === undefined) return <Setup onStart={startGame} />
+  if (players === undefined) return <Setup onStart={startGame} />
 
   if (!session) {
     return (
@@ -202,7 +219,7 @@ export default function ConnectFour() {
         {apiError ? (
           <div className="text-center">
             <p className="text-red-400 mb-4">{apiError}</p>
-            <button onClick={() => startGame(user)} className="bg-blue-600 hover:bg-blue-500 px-6 py-2 rounded-lg">
+            <button onClick={() => startGame(players.p1, players.p2)} className="bg-blue-600 hover:bg-blue-500 px-6 py-2 rounded-lg">
               Retry
             </button>
           </div>
@@ -213,13 +230,14 @@ export default function ConnectFour() {
     )
   }
 
-  const playerLabel = (p: 'R' | 'Y') => p === 'R' ? 'Red' : 'Yellow'
+  const playerName = (marker: string) => marker === 'R' ? players.p1.username : players.p2.username
+  const playerColor = (marker: string) => marker === 'R' ? 'Red' : 'Yellow'
 
   const statusText = session.winner
-    ? `${playerLabel(session.winner as 'R' | 'Y')} wins!`
+    ? `${playerName(session.winner)} (${playerColor(session.winner)}) wins!`
     : session.isDraw
     ? "It's a draw!"
-    : `${playerLabel(session.currentPlayer)}'s turn`
+    : `${playerName(session.currentPlayer)}'s turn`
 
   const statusColor = session.winner === 'R'
     ? 'bg-red-600 text-white'
@@ -239,11 +257,10 @@ export default function ConnectFour() {
           &larr; Back
         </button>
         <h1 className="text-2xl font-bold text-white">Connect Four</h1>
-        {user ? (
-          <span className="text-blue-400 text-sm">{user.username}</span>
-        ) : (
-          <span className="text-gray-500 text-sm">Guest</span>
-        )}
+        <div className="text-right text-xs">
+          <p className="text-red-400">{players.p1.username} <span className="text-gray-500">(Red)</span></p>
+          <p className="text-yellow-400">{players.p2.username} <span className="text-gray-500">(Yellow)</span></p>
+        </div>
       </div>
 
       {/* Status */}
@@ -281,7 +298,7 @@ export default function ConnectFour() {
         </button>
       </div>
 
-      {resultSaved && <p className="text-green-400 text-sm">Score saved!</p>}
+      {resultSaved && <p className="text-green-400 text-sm">Results saved!</p>}
     </div>
   )
 }

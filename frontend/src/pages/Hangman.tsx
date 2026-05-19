@@ -99,24 +99,24 @@ function Keyboard({ guessedLetters, wrongGuesses, onGuess, disabled }: KeyboardP
 // ── Setup screen ──────────────────────────────────────────────────────────────
 
 interface SetupProps {
-  onStart: (user: User | null) => void
+  onStart: (user: User) => void
 }
 
 function Setup({ onStart }: SetupProps) {
   const [username, setUsername] = useState('')
-  const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
   async function handleStart() {
-    if (!username.trim()) { onStart(null); return }
+    const name = username.trim()
+    if (!name) { setError('Please enter your name.'); return }
     setLoading(true)
     setError('')
     try {
-      const user = await usersApi.create(username.trim(), email.trim() || `${username.trim()}@guest.local`)
+      const user = await usersApi.getOrCreate(name)
       onStart(user)
     } catch {
-      setError('Username already taken or invalid email.')
+      setError('Could not set up player. Please try again.')
       setLoading(false)
     }
   }
@@ -127,17 +127,11 @@ function Setup({ onStart }: SetupProps) {
         <h2 className="text-2xl font-bold text-white mb-2 text-center">Hangman</h2>
         <p className="text-gray-400 text-sm mb-6 text-center">Guess the word before the man is hanged.</p>
         <input
-          className="w-full bg-gray-800 text-white rounded-lg px-4 py-2 mb-3 outline-none focus:ring-2 focus:ring-emerald-500"
-          placeholder="Username (optional)"
+          className="w-full bg-gray-800 text-white rounded-lg px-4 py-2 mb-4 outline-none focus:ring-2 focus:ring-emerald-500"
+          placeholder="Your name"
           value={username}
           onChange={e => setUsername(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleStart()}
-        />
-        <input
-          className="w-full bg-gray-800 text-white rounded-lg px-4 py-2 mb-4 outline-none focus:ring-2 focus:ring-emerald-500"
-          placeholder="Email (optional)"
-          value={email}
-          onChange={e => setEmail(e.target.value)}
         />
         {error && <p className="text-red-400 text-sm mb-3">{error}</p>}
         <button
@@ -145,13 +139,7 @@ function Setup({ onStart }: SetupProps) {
           disabled={loading}
           className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-semibold py-2 rounded-lg transition-colors"
         >
-          {loading ? 'Starting…' : 'Play'}
-        </button>
-        <button
-          onClick={() => onStart(null)}
-          className="w-full mt-2 text-gray-500 hover:text-gray-300 text-sm py-1 transition-colors"
-        >
-          Play as guest
+          {loading ? 'Setting up…' : 'Play'}
         </button>
       </div>
     </div>
@@ -162,7 +150,7 @@ function Setup({ onStart }: SetupProps) {
 
 export default function Hangman() {
   const navigate = useNavigate()
-  const [user, setUser] = useState<User | null | undefined>(undefined)
+  const [user, setUser] = useState<User | undefined>(undefined)
   const [game, setGame] = useState<HangmanGame | null>(null)
   const [loading, setLoading] = useState(false)
   const [resultSaved, setResultSaved] = useState(false)
@@ -170,7 +158,7 @@ export default function Hangman() {
 
   const isOver = game?.status !== 'playing'
 
-  const startGame = useCallback(async (selectedUser: User | null) => {
+  const startGame = useCallback(async (selectedUser: User) => {
     setUser(selectedUser)
     setLoading(true)
     setApiError('')
@@ -186,14 +174,14 @@ export default function Hangman() {
   }, [])
 
   const handleGuess = useCallback(async (letter: string) => {
-    if (!game || isOver || loading) return
+    if (!game || isOver || loading || !user) return
     setLoading(true)
     setApiError('')
     try {
       const updated = await hangmanApi.makeGuess(game.id, letter)
       setGame(updated)
 
-      if (updated.status !== 'playing' && user && !resultSaved) {
+      if (updated.status !== 'playing' && !resultSaved) {
         const result = updated.status === 'won' ? 'win' : 'loss'
         await hangmanApi.saveResult(game.id, user.id, result, updated.maskedWord)
         setResultSaved(true)
@@ -236,7 +224,7 @@ export default function Hangman() {
         {apiError ? (
           <div className="text-center">
             <p className="text-red-400 mb-4">{apiError}</p>
-            <button onClick={() => startGame(user)} className="bg-emerald-600 hover:bg-emerald-500 px-6 py-2 rounded-lg">
+            <button onClick={() => user && startGame(user)} className="bg-emerald-600 hover:bg-emerald-500 px-6 py-2 rounded-lg">
               Retry
             </button>
           </div>
@@ -257,11 +245,7 @@ export default function Hangman() {
           &larr; Back
         </button>
         <h1 className="text-2xl font-bold text-white">Hangman</h1>
-        {user ? (
-          <span className="text-emerald-400 text-sm">{user.username}</span>
-        ) : (
-          <span className="text-gray-500 text-sm">Guest</span>
-        )}
+        <span className="text-emerald-400 text-sm">{user?.username}</span>
       </div>
 
       {/* Drawing + attempts */}
