@@ -85,6 +85,7 @@ interface SetupProps {
 }
 
 function Setup({ onStart }: SetupProps) {
+  
   const navigate = useNavigate()
   const [name1, setName1] = useState('')
   const [name2, setName2] = useState('')
@@ -92,12 +93,17 @@ function Setup({ onStart }: SetupProps) {
   const [error, setError] = useState('')
 
   async function handleStart() {
+
     const n1 = name1.trim()
     const n2 = name2.trim()
+
     if (!n1 || !n2) { setError('Both player names are required.'); return }
     if (n1 === n2) { setError('Player names must be different.'); return }
+
     setLoading(true)
+
     setError('')
+
     try {
       const [p1, p2] = await Promise.all([usersApi.getOrCreate(n1), usersApi.getOrCreate(n2)])
       onStart(p1, p2)
@@ -110,11 +116,13 @@ function Setup({ onStart }: SetupProps) {
   return (
     <div className="min-h-screen bg-gray-950 flex items-center justify-center">
       <div className="bg-gray-900 rounded-2xl p-8 w-full max-w-sm shadow-xl">
+
         <div className="flex items-center mb-4">
           <button onClick={() => navigate('/')} className="text-gray-400 hover:text-white text-sm transition-colors">
             &larr; Dashboard
           </button>
         </div>
+
         <h2 className="text-2xl font-bold text-white mb-2 text-center">Connect Four</h2>
         <p className="text-gray-400 text-sm mb-6 text-center">Enter both player names to start.</p>
         <label className="text-gray-400 text-xs mb-1 block">Player 1 (Red)</label>
@@ -146,7 +154,6 @@ function Setup({ onStart }: SetupProps) {
 }
 
 // ── Board ─────────────────────────────────────────────────────────────────────
-
 interface BoardProps {
   board: (string | null)[]
   winningCells: number[]
@@ -160,6 +167,7 @@ function Board({ board, winningCells, onColClick, disabled, currentPlayer }: Boa
 
   return (
     <div className="bg-blue-700 p-3 rounded-2xl shadow-2xl">
+
       {/* Column hover indicators */}
       <div className="grid gap-2 mb-2" style={{ gridTemplateColumns: `repeat(${COLS}, 1fr)` }}>
         {Array.from({ length: COLS }, (_, col) => (
@@ -213,8 +221,8 @@ function Board({ board, winningCells, onColClick, disabled, currentPlayer }: Boa
 }
 
 // ── Main game ─────────────────────────────────────────────────────────────────
-
 export default function ConnectFour() {
+
   const navigate = useNavigate()
   const [players, setPlayers] = useState<Players | undefined>(undefined)
   const [session, setSession] = useState<ConnectFourSession | null>(null)
@@ -333,6 +341,7 @@ export default function ConnectFour() {
 
   return (
     <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center gap-5 p-6">
+
       {/* Header */}
       <div className="flex items-center justify-between w-full max-w-lg">
         <button onClick={() => navigate('/')} className="text-gray-400 hover:text-white transition-colors text-sm">
@@ -348,7 +357,9 @@ export default function ConnectFour() {
           <p className="text-red-400 font-semibold text-sm">{players.p1.username}</p>
           <p className="text-gray-500 text-xs">Red</p>
         </div>
+
         <span className="text-3xl font-black text-white">{score.p1} — {score.p2}</span>
+
         <div className="text-left">
           <p className="text-yellow-400 font-semibold text-sm">{players.p2.username}</p>
           <p className="text-gray-500 text-xs">Yellow</p>
@@ -382,6 +393,7 @@ export default function ConnectFour() {
             Play Again
           </button>
         )}
+
         <button
           onClick={() => navigate('/')}
           className="bg-gray-800 hover:bg-gray-700 text-gray-300 font-semibold px-6 py-2 rounded-lg transition-colors"
